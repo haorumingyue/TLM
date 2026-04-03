@@ -1,45 +1,59 @@
-# 煤流输送仿真与 Chronos-2 流量预测
+# TLM: 煤流输送仿真与 Chronos-2 流量预测系统
 
-## 目录说明
+TLM (Traffic & Logistics Management for Coal Conveyor) 是一个集成了**实时物理仿真**与**深度学习流量预测**的工业皮带机调速控制决策系统。该系统基于 Amazon Chronos-2 预训练模型进行流量预测，并通过智能 PID 策略实现皮带机的离散化节能调速。
 
-| 路径 | 说明 |
-|------|------|
-| `coal_conveyor_predict.py` | 主入口：仿真 + 双路预测（SIM / BACKTEST，见 `coal_conveyor/config.py` 中 `RUN_MODE`） |
-| `coal_conveyor/` | 核心包：配置、数据解析、仿真、预测、回放、可视化、回测 |
-| `coal_conveyor_web.py` | 主煤流协同控制系统 Web 入口（薄封装，逻辑在 `coal_conveyor_web/` 包内） |
-| `coal_conveyor_web/` | Web 版：`config`（`WebConfig`）、数据、PID、仿真、预测、回放、`state`、`runtime`、`app`（Flask）、`templates/dashboard.html` |
-| `data/` | 日志数据（`YYYYMMDD.txt`） |
-| `models/chronos-2/` | Chronos-2 本地模型目录 |
-| `docs/` | 文档（如调速策略说明） |
-| `scripts/` | 维护脚本与独立工具（修补脚本、`predict_traffic.py` 等） |
-| `legacy/` | 历史独立脚本（如仅皮带仿真、无预测的 `coal_conveyor_sim.py`） |
-| `output/` | 运行生成的 HTML 等输出（回测图、预测结果等，默认写入此目录） |
+## 🚀 系统特性
 
-## 运行方式
+- **智能仿真引擎**: 多路煤流动态叠加仿真，支持多级调速反馈。
+- **Chronos-2 流量预测**: 利用先进的时间序列大模型，在后端异步进行多步流量推理。
+- **离散化节能调速**: 基于 PID 算法计算连续目标带速，并自动映射到工业级离散档位，减少机械磨损与能耗。
+- **Web 可视化仪表盘**: 实时展示皮带瞬时流量、分路历史流量对比、预测结果及节能指标。
 
-在项目根目录执行：
+## 📂 目录结构 (Refactored)
+
+项目已完成架构重构，核心逻辑位于 `src/` 包内：
+
+| 模块/文件 | 说明 |
+| :--- | :--- |
+| `run_web.py` | **主程序入口**: 启动 Web 版仿真与监控仪表盘。 |
+| `src/core/` | **核心逻辑层**: 包含配置 (`config`)、数据解析 (`data`)、PID 调速 (`pid`)、仿真引擎 (`simulator`) 和状态管理 (`state`)。 |
+| `src/predict/` | **预测层**: 封装 Chronos-2 模型加载与异步推理 (`predictor`)。 |
+| `src/web/` | **表现层**: 包含 Web 后端 (`app`)、命令行接口 (`cli`)、数据回放 (`replay`) 和前端模板。 |
+| `data/` | 物理设备采集的原始流量日志数据 (`.txt`)。 |
+| `models/chronos-2/` | 本地 Chronos-2 模型权重文件 (已在 .gitignore 中排除)。 |
+| `docs/` | 详细设计说明书、调速算法文档等。 |
+| `output/` | 系统运行生成的仿真报告与图表。 |
+
+## 🛠️ 安装要求
+
+1. **Python 3.9+**
+2. 安装依赖 (推荐使用虚拟环境):
+   ```bash
+   pip install -r requirements.txt
+   ```
+   *注意: `chronos-forecasting` 需要 `torch` 环境。*
+
+## 🖱️ 运行指南
+
+在项目根目录下执行以下命令即可启动 Web 监控平台：
 
 ```bash
-python coal_conveyor_predict.py
+python run_web.py
 ```
 
-依赖见 `requirements.txt`。首次运行若缺包，`coal_conveyor/cli.py` 仍会尝试自动安装（与原先单文件行为一致）。
+- **访问地址**: `http://localhost:5173`
+- **默认功能**: 系统会自动加载 `data/` 下的默认日志，启动仿真线程与后台预测线程。
 
-独立流量预测脚本（输出到 `output/forecast_result.html`）：
+## 🧠 核心算法说明
 
-```bash
-python scripts/predict_traffic.py
-```
+### 1. 流量预测 (Chronos-2)
+系统通过异步队列收集最近 60 个历史采样点，利用 Chronos-2 模型预测未来 10 个步长的流量分布（0.1, 0.5, 0.9 分位数），为调速决策提供预判依据。
 
-主煤流协同控制系统 Web 端（默认 `http://localhost:5173`，配置见 `coal_conveyor_web/config.py` 中 `WebConfig`）：
+### 2. 离散 PID 调速
+针对连续 PID 输出的理想带速，系统内置了**离散化映射策略**：
+- **中点滞回**: 使用各档位中点作为切换阈值，有效抑制档位频繁切换引起的机械振荡。
+- **驻留限制**: 确保在低档位运行至少一定时间，防止短时间内反复换挡。
 
-```bash
-python coal_conveyor_web.py
-```
+## 📝 许可证
 
-## 输出路径
-
-- 一体化程序回测模式：`output/conveyor_forecast.html`（由 `coal_conveyor/config.py` 中 `PLOT_SAVE_PATH` 配置）
-- `scripts/predict_traffic.py`：`output/forecast_result.html`
-
-若 `output/` 不存在，保存图表前会自动创建。
+本项目仅用于仿真研究与技术演示。
