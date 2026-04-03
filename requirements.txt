@@ -1,0 +1,8 @@
+chronos-forecasting
+pandas
+matplotlib
+numpy
+torch
+plotly
+colorama
+flask

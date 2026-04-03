@@ -1,0 +1,22 @@
+/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Project specific
+/data/*.txt
+/logs/
+/output/
+/models/chronos-2/
+*.log
+*.sqlite3
+.DS_Store
+.idea/
+.vscode/
