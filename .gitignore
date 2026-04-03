@@ -14,7 +14,6 @@ venv.bak/
 /data/*.txt
 /logs/
 /output/
-/models/
 *.log
 *.sqlite3
 .DS_Store
