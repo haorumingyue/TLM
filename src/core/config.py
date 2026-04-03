@@ -25,6 +25,11 @@ class WebConfig:
     PREDICTION_LENGTH = 10
     GAP_THRESHOLD_SEC = 30
     QUANTILE_LEVELS = [0.1, 0.5, 0.9]
+    # 预测模型后端：'chronos' 使用 Chronos2Pipeline；'timesfm' 使用 TimesFM 进行分位数预测
+    PREDICT_BACKEND = "chronos"
+    # PREDICT_BACKEND = "timesfm"
+    # TimesFM 2.5 torch 版本的预训练权重（当 PREDICT_BACKEND='timesfm' 时使用）
+    TIMESFM_MODEL_NAME = os.path.join(os.getcwd(), "models", "timesfm-2.5-200m-pytorch")
     HOST = "0.0.0.0"
     PORT = 5173
     N_STATE_STEPS = 50

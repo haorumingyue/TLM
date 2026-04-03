@@ -4,7 +4,7 @@ from .config import WebConfig
 
 
 class PIDStrategy:
-    V_MIN, V_MAX, L_OPT = 1.5, 4.5, 0.200
+    V_MIN, V_MAX, L_OPT = 1.5, 4.5, 0.15
 
     def __init__(self):
         self._integ = 0.0
