@@ -96,7 +96,7 @@ source .venv/bin/activate        # Linux/macOS
 # .venv\Scripts\Activate.ps1    # Windows PowerShell
 
 # 2. 克隆仓库并安装依赖
-git clone <your-repo-url>
+git clone https://github.com/haorumingyue/TLM.git
 cd TLM
 pip install -r requirements.txt
 ```
