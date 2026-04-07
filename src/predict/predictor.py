@@ -1,3 +1,4 @@
+"""时序预测封装：Chronos-2 或 TimesFM，输出未来步长的分位数流量。"""
 import threading
 
 import numpy as np
@@ -7,12 +8,15 @@ from ..core.config import WebConfig
 
 
 class Predictor:
+    """懒加载模型；predict 返回 (q_low, q_med, q_high) 与未来步对齐。"""
+
     def __init__(self):
         self._pipe = None
         self._timesfm = None
         self._lock = threading.Lock()
 
     def load(self):
+        """按 WebConfig.PREDICT_BACKEND 加载权重；TimesFM 失败时可回退 Chronos。"""
         with self._lock:
             if self._pipe or self._timesfm:
                 return
@@ -106,6 +110,7 @@ class Predictor:
         return (self._timesfm is not None) or (self._pipe is not None)
 
     def predict(self, ctx):
+        """ctx 为最近 CONTEXT_LENGTH 个采样点的流量序列；返回三组与未来 horizon 等长的数组。"""
         if not self.ready:
             return None
 

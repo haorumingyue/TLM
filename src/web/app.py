@@ -1,3 +1,4 @@
+"""Flask 应用：仪表盘页面与 /api/state、/api/control。"""
 import os
 
 from flask import Flask, jsonify, render_template, request
@@ -7,6 +8,7 @@ from ..core.config import WebConfig
 
 
 def create_app():
+    """注册路由；模板内 lane_flow_ymax 与额定能力一致，便于纵轴统一。"""
     root = os.path.dirname(os.path.abspath(__file__))
     app = Flask(__name__, template_folder=os.path.join(root, "templates"))
 

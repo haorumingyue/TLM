@@ -1,8 +1,9 @@
-"""Web 监控版专用配置（与桌面版 `coal_conveyor.config` 独立，便于分别调参）。"""
+"""Web 仿真与仪表盘专用配置（与历史桌面版配置分离，便于单独调参）。"""
 import os
 
 
 class WebConfig:
+    """仿真步长、皮带几何、离散档位、预测与 HTTP 服务等相关常量。"""
     BELT_LENGTH = 5000
     CELL_SIZE = 1.0
     DT = 0.1
@@ -10,9 +11,8 @@ class WebConfig:
     FACE_NAMES = ["3306综采@0m", "3217综采@1000m"]
     # 额定带速（最高档），对应约 4500 t/h
     ACTUAL_SPEED = 4.5
-    # 离散调速档位（从低到高，单位 m/s），智能调速时实际带速仅取这些值
+    # 离散调速档位（从低到高，m/s）；换挡时在相邻档中点滞回，见 Simulator._apply_gears
     SPEED_GEARS = [1.5, 2.25, 3.0, 3.75, 4.5]
-    # 档位切换时的中点回差，使用档间中点做简单滞回避免频繁抖动
     DATA_DIR = "data"
     LANE0_DATE = "20250512"
     LANE1_DATE = "20250514"

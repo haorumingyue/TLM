@@ -1,9 +1,12 @@
+"""离散仿真用 PID 策略：连续理想带速 + 积分，供外层档位量化使用。"""
 import numpy as np
 
 from .config import WebConfig
 
 
 class PIDStrategy:
+    """根据入流、预测与皮带载荷计算连续目标带速（非直接输出离散档位）。"""
+
     V_MIN, V_MAX, L_OPT = 1.5, 4.5, 0.15
 
     def __init__(self):
@@ -13,6 +16,13 @@ class PIDStrategy:
         self._ilim = 0.5
 
     def calc(self, spd, inflow, max_load, dt, belt_load=None, pred_inflow=None):
+        """
+        计算下一时刻的连续理想带速。
+
+        spd: 当前实际带速（档位量化值，积分路径中刻意弱化其影响以避免极限环）。
+        inflow: 当前总入流（t/s）；pred_inflow: 预测步上的入流序列（可选）。
+        belt_load: 各格煤量，用于加权估计局部拥堵；max_load: 全局最大线密度上界。
+        """
         if belt_load is not None and len(belt_load):
             w = np.linspace(1.0, 0.2, len(belt_load))
             s_max = float(np.max(belt_load * w))
@@ -28,11 +38,10 @@ class PIDStrategy:
 
         ref = max(inflow, float(np.max(pred_inflow))) if pred_inflow is not None and len(pred_inflow) else inflow
         
-        # 核心修复 1：纯前馈计算，打破因为传入实际 discrete spd 导致的 "密度跳变错觉"
-        # 目标带速仅受 "需要消化多少流量保证 0.9*L_OPT" 决定
+        # 前馈：按 ref 与目标线密度推算所需带速，不依赖当前离散 spd，避免“密度跳变”误判
         v_flow = (ref * WebConfig.CELL_SIZE) / (self.L_OPT * 0.90)
         
-        # 核心修复 2：真实载荷兜底。仅当实质皮带局部异常拥堵时才强制施加底线速度
+        # 反馈兜底：线密度超过 L_OPT 时按拥堵程度抬高目标带速下限
         v_feedback = 0.0
         if s_max > self.L_OPT:
             excess_ratio = (s_max - self.L_OPT) / (0.5 * self.L_OPT)
@@ -40,8 +49,7 @@ class PIDStrategy:
             
         ideal = max(self.V_MIN, min(self.V_MAX, max(v_flow, v_feedback)))
 
-        # 核心修复 3：相对于自身连续目标状态 `_last_v` 进行积分，而非离散实际带速 `spd`
-        # （如果按 spd 积分会吃满由档位量子化带来的稳态误差，产生强制上下跳档的极限环震荡）
+        # 积分对象用连续状态 _last_v，不用离散 spd，避免档位量化误差在积分中累积引发换挡震荡
         dr = abs(ideal - self._last_v) / max(self._last_v, 1e-6)
         if dr < 0.02:
             self._integ *= 0.98

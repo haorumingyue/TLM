@@ -1,3 +1,4 @@
+"""皮带离散元仿真：入流推进、出流移位、PID 调速与能耗统计。"""
 import numpy as np
 
 from .config import WebConfig
@@ -5,6 +6,8 @@ from .pid import PIDStrategy
 
 
 class Simulator:
+    """一维皮带煤流仿真；可选固定额定带速作为对照工况。"""
+
     def __init__(self, fixed_speed=None):
         cfg = WebConfig
         self.n = int(cfg.BELT_LENGTH / cfg.CELL_SIZE)

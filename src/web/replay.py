@@ -1,3 +1,4 @@
+"""按历史日志驱动仿真入流，并在后台线程中异步提交预测任务。"""
 import queue as _queue
 import threading
 import time
@@ -9,6 +10,8 @@ from ..core.data import raw2ts
 
 
 class Replay:
+    """双路日志索引、断点处理、预测队列与缓存，供 Simulator.pred_flows 使用前馈。"""
+
     def __init__(self, dfs, masks, sim, pred):
         self.dfs = dfs
         self.masks = masks

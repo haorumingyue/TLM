@@ -1,3 +1,4 @@
+"""命令行入口：校验依赖、加载数据、启动预测加载线程与仿真线程、运行 Flask。"""
 import os
 import subprocess
 import sys

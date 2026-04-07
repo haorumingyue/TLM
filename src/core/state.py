@@ -1,9 +1,12 @@
+"""仿真与前端之间的线程安全快照：节能率、历史曲线、预测与调速事件等。"""
 import threading
 
 from .config import WebConfig
 
 
 class SimState:
+    """持有暂停/自动调速等 UI 状态，并将双工况仿真结果序列化为 API 负载。"""
+
     def __init__(self):
         self._lk = threading.RLock()
         self.paused = False
