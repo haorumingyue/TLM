@@ -61,10 +61,33 @@ graph TD
 
 ---
 
-## 🚀 快速开始
+## 🚀 安装与运行指南
 
-### 1. 环境准备
-推荐使用 **Python 3.10+** 的虚拟环境。
+### 1. 环境要求
+
+- **Python**: 建议使用 **Python 3.10 ~ 3.12**（高于 3.12 的版本可能与部分依赖不兼容）。
+- **操作系统**: Windows / Linux / macOS 三平台均可；示例命令以 `bash`/PowerShell 为主。
+- **GPU (可选)**: 若使用 Chronos-2 / TimesFM 的 GPU 推理，请准备支持 CUDA 的 NVIDIA 显卡与匹配的 PyTorch 发行版。
+
+### 2. 创建虚拟环境
+
+推荐使用 `venv` 或 `conda` 管理依赖，避免污染全局 Python：
+
+```bash
+# 以 venv 为例
+python -m venv .venv
+source .venv/bin/activate  # Windows PowerShell: .venv\Scripts\Activate.ps1
+```
+
+或：
+
+```bash
+# 以 conda 为例
+conda create -n tlm python=3.10 -y
+conda activate tlm
+```
+
+### 3. 获取代码与安装依赖
 
 ```bash
 # 克隆仓库
@@ -73,21 +96,64 @@ cd TLM
 
 # 安装基础依赖
 pip install -r requirements.txt
-
-# (可选) 若需切换 TimesFM 后端，请参考 src/predict/predictor.py 的安装建议
 ```
 
-### 2. 模型部署
-本项目默认在 `models/chronos-2/` 中查找权重。如果没有，系统将尝试从网络自动拉取（需能访问 HuggingFace）。
+`requirements.txt` 中只包含 Web 仿真与 Chronos-2 推理的必要依赖；如需启用 TimesFM 后端，请参考下文「可选：安装 TimesFM」。
 
-### 3. 启动系统
-执行根目录下的启动脚本：
+### 4. 准备数据与模型
+
+- **历史流量日志**
+  - 默认从 `data/` 目录加载，文件名形如 `<date>.txt`，例如：
+    - `data/20250512.txt`（对应 `WebConfig.LANE0_DATE`）
+    - `data/20250514.txt`（对应 `WebConfig.LANE1_DATE`）
+  - 日志格式示例可参考现有样本；解析逻辑见 `src/core/data.py`。
+
+- **Chronos-2 模型（默认后端）**
+  - 默认从 `models/chronos-2/` 目录加载。
+  - 若本地不存在，代码会按 Chronos 官方方式从 HuggingFace 自动拉取（需要外网与 HuggingFace 访问权限）。
+  - 如需离线部署，可提前下载权重放入该目录，保持目录结构与官方一致。
+
+### 5. 可选：安装 TimesFM 预测后端
+
+TimesFM 在官方实现上对 Python 版本有一定约束，建议在 **Python 3.10 ~ 3.12** 的环境中单独安装：
+
+```bash
+# 仅在需要 TimesFM 时执行
+git clone https://github.com/google-research/timesfm.git
+cd timesfm
+pip install -e .[torch]
+```
+
+安装完成后：
+
+1. 将 TimesFM 2.5 的本地权重目录放到仓库的 `models/timesfm-2.5-200m-pytorch/` 下（或在 `WebConfig.TIMESFM_MODEL_NAME` 中调整路径）。
+2. 修改 `src/core/config.py` 中的：
+
+   ```python
+   PREDICT_BACKEND = "timesfm"  # 默认为 "chronos"
+   ```
+
+预测器初始化时若发现 TimesFM 不可用，会自动打印详细提示并回退到 Chronos-2，不会影响 Web 仿真正常启动。
+
+### 6. 启动 Web 仿真与仪表盘
+
+确保当前目录为项目根目录（包含 `run_web.py`）：
 
 ```bash
 python run_web.py
 ```
 
-访问 `http://localhost:5173` 即可进入监控仪表盘。
+终端会依次输出：
+
+- 日志文件加载情况（每路样本条数与断点数量）
+- 预测器后台加载状态（Chronos-2 或 TimesFM）
+- Flask Web 服务监听的地址与端口（默认 `http://localhost:5173`，端口由 `WebConfig.PORT` 控制）
+
+浏览器访问对应地址即可进入实时监控仪表盘，查看：
+
+- 双工况对比（额定常速 vs AI 智能调速）的节能率
+- 主皮带线密度、累计进出量、带速档位时间序列
+- 每一路工作面的历史流量与未来预测分位数曲线
 
 ---
 
