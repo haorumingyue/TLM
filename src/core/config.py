@@ -46,7 +46,6 @@ class WebConfig:
         "wear_speed": 0.060,
         "wear_load": 0.028,
         "wear_ramp": 0.90,
-        "discharge_queue": "T_B2_B3",
     }
 
     BELT_PANEL101 = {
@@ -75,10 +74,8 @@ class WebConfig:
     LOAD_POINTS = [
         {"id": "A", "name": "3306综采", "belt": "main", "pos": 0.0, "queue": "A", "max_tph": 1500},
         {"id": "B", "name": "3217综采", "belt": "main", "pos": 2500.0, "queue": "B", "max_tph": 1200},
-        {"id": "C", "name": "主运→斜井转载", "belt": "incline", "pos": 0.0, "queue": "C", "max_tph": 900},
-        {"id": "T", "name": "斜井→101", "belt": "panel101", "pos": 0.0, "queue": "T_B2_B3", "max_tph": 850},
     ]
-    EXTERNAL_QUEUE_IDS = ("A", "B", "C")
+    EXTERNAL_QUEUE_IDS = ("A", "B")
 
     # 前端显示的两个工作面入流点名称（与 replay 对应）
     FACE_NAMES = ["3306综采@0m", "3217综采@2500m"]

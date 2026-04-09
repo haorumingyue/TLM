@@ -72,19 +72,27 @@ def _gears_for(belt_id):
     return WebConfig.SPEED_GEARS_PANEL101
 
 
-def _advect_cells(cells, speed, dx, dt):
-    """CFL 稳定迎风差分传导（参照 0756 _advect_cells）。"""
+def _advect_cells(cells, speed, dx, dt, boundary_in=0.0):
+    """CFL 稳定迎风差分传导。
+
+    boundary_in: 本步从上游级联进入首格的煤量（t），
+                 按 local_cfl 比例参与首格传导（即作为流入而非存量）。
+    """
     if speed <= 1e-6:
         return cells.copy(), 0.0
     cfl = speed * dt / dx
     substeps = max(1, int(math.ceil(cfl / 0.95)))
     local_cfl = cfl / substeps
+    # 每个子步的边界流入量 = boundary_in * local_cfl（与 CFL 成正比进入）
+    # 但 boundary_in 是总量，均分到子步
+    bnd_each = boundary_in / substeps
     updated = cells.copy()
     total_outflow = 0.0
     for _ in range(substeps):
         total_outflow += float(local_cfl * updated[-1])
         nxt = updated.copy()
-        nxt[0] = updated[0] * (1.0 - local_cfl)
+        # 首格：自身煤传导走 cfl 比例，同时接收边界流入（不被 CFL 削减）
+        nxt[0] = updated[0] * (1.0 - local_cfl) + bnd_each
         nxt[1:] = updated[1:] * (1.0 - local_cfl) + updated[:-1] * local_cfl
         updated = nxt
     return np.maximum(updated, 0.0), total_outflow
@@ -157,11 +165,11 @@ class Simulator:
         for belt_id in WebConfig.BELT_ORDER:
             self.belts[belt_id] = BeltState(WebConfig.BELT_CONFIGS[belt_id])
 
-        # 转载点队列
-        self.queues = {q: 0.0 for q in ("A", "B", "C", "T_B2_B3")}
+        # 转载点队列（A/B 为工作面入流缓冲，级联直接注入下游皮带首格）
+        self.queues = {"A": 0.0, "B": 0.0}
 
-        # 入流速率（t/h），由外部 set_rate 设置
-        self.rates = {"A": 0.0, "B": 0.0, "C": 0.0}
+        # 入流速率（t/s），由外部 set_rate 设置
+        self.rates = {"A": 0.0, "B": 0.0}
 
         # PID 控制器（三条皮带各一个）
         self.pid_main = PIDStrategy()
@@ -192,96 +200,128 @@ class Simulator:
         dt = WebConfig.DT
 
         # 入流进入转载点队列（rates 单位为 t/s，乘以 dt 得到 t）
-        for qid in WebConfig.EXTERNAL_QUEUE_IDS:
+        for qid in WebConfig.INFLOW_QUEUES:
             self.queues[qid] += max(0.0, self.rates.get(qid, 0.0)) * dt
 
         total_power_kw = 0.0
 
+        # ── 拼接三条皮带为一条连续格元数组 ──
+        n_main = len(self.belts["main"].cells)
+        n_incline = len(self.belts["incline"].cells)
+        n_p101 = len(self.belts["panel101"].cells)
+        n_total = n_main + n_incline + n_p101
+
+        # 每格对应的皮带 ID 和在皮带内的局部索引
+        belt_of_cell = ["main"] * n_main + ["incline"] * n_incline + ["panel101"] * n_p101
+
+        # 拼接的格元数组（只读参考）和各皮带 max_density 数组
+        all_cells = np.concatenate([
+            self.belts["main"].cells,
+            self.belts["incline"].cells,
+            self.belts["panel101"].cells,
+        ])
+        max_dens = np.array(
+            [WebConfig.BELT_MAIN["max_density"]] * n_main +
+            [WebConfig.BELT_INCLINE["max_density"]] * n_incline +
+            [WebConfig.BELT_PANEL101["max_density"]] * n_p101
+        )
+
+        # ── 1. A/B 装载到主运 ──
+        cells = all_cells.copy()
+        for lp in WebConfig.LOAD_POINTS:
+            belt_id = lp["belt"]
+            if belt_id != "main":
+                continue
+            q_mass = self.queues.get(lp["queue"], 0.0)
+            if q_mass <= 1e-9:
+                continue
+            idx = int(lp["pos"])
+            cell_cap = max(max_dens[idx] - cells[idx], 0.0)
+            feeder_cap = lp["max_tph"] * dt / 3600.0
+            loaded = min(q_mass, cell_cap, feeder_cap)
+            if loaded > 0.0:
+                cells[idx] += loaded
+                self.queues[lp["queue"]] -= loaded
+
+        # ── 2. 按皮带分别调速 ──
         for belt_id in WebConfig.BELT_ORDER:
-            cfg = WebConfig.BELT_CONFIGS[belt_id]
             state = self.belts[belt_id]
-            dx = cfg["cell_length"]
-
-            # ── 1. 转载点装载：队列 → 皮带格元 ──
-            cells = state.cells.copy()
-            for lp in WebConfig.LOAD_POINTS:
-                if lp["belt"] != belt_id:
-                    continue
-                q_mass = self.queues.get(lp["queue"], 0.0)
-                if q_mass <= 1e-9:
-                    continue
-                idx = min(int(lp["pos"] / dx), len(cells) - 1)
-                cell_cap = max(cfg["max_density"] * dx - cells[idx], 0.0)
-                feeder_cap = lp["max_tph"] * dt / 3600.0
-                loaded = min(q_mass, cell_cap, feeder_cap)
-                if loaded > 0.0:
-                    cells[idx] += loaded
-                    self.queues[lp["queue"]] -= loaded
-
-            # ── 2. 对流传导 ──
+            cfg = WebConfig.BELT_CONFIGS[belt_id]
             prev_speed = state.speed
 
             if self.fixed_speed is not None:
-                # 对照工况：各皮带保持各自额定速度（从 config 的 max_speed 取）
                 state.speed = cfg["max_speed"]
             elif self.auto:
-                # 三条皮带全部 PID 调速
                 pid = {"main": self.pid_main, "incline": self.pid_incline, "panel101": self.pid_panel101}[belt_id]
-                fill_denom = cfg["max_density"] * dx
-                s_max = state.max_cell_t / max(fill_denom, 1e-6)
-                fill_ratios = cells / max(fill_denom, 1e-6)
+                # 本皮带在拼接数组中的范围
                 if belt_id == "main":
+                    seg = cells[:n_main]
                     inflow = sum(self.rates.get(q, 0.0) for q in ("A", "B"))
                     vp = [p for p in self.pred_flows if p is not None]
                     pc = np.sum(vp, axis=0) if vp else None
                 elif belt_id == "incline":
+                    seg = cells[n_main:n_main+n_incline]
                     inflow = self.belts["main"].last_outflow_tph / 3600.0
                     pc = None
-                else:  # panel101
+                else:
+                    seg = cells[n_main+n_incline:]
                     inflow = self.belts["incline"].last_outflow_tph / 3600.0
                     pc = None
+                fill_denom = cfg["max_density"] * cfg["cell_length"]
+                s_max = float(np.max(seg)) / max(fill_denom, 1e-6)
+                fill_ratios = seg / max(fill_denom, 1e-6)
                 v_cont = pid.calc(state.speed, inflow, s_max, dt, fill_ratios, pc,
                                   max_density=cfg["max_density"])
                 state.speed = _apply_gears(v_cont, state)
 
             state.command_speed = state.speed
-            accel = (state.speed - prev_speed) / dt
 
-            advanced, outflow = _advect_cells(cells, state.speed, dx, dt)
-            state.cells = advanced
-            state.last_outflow_tph = outflow * 3600.0 / dt
-            state.cumulative_outflow += outflow
+        # ── 3. 按皮带分别传导（级联处用 boundary_in 直接传递）──
+        main_cells = cells[:n_main].copy()
+        main_adv, main_out = _advect_cells(main_cells, self.belts["main"].speed, 1.0, dt)
 
-            # ── 3. 出流 → 下游队列或排出 ──
-            discharge_q = cfg.get("discharge_queue")
-            if discharge_q:
-                self.queues[discharge_q] += outflow
-            elif belt_id == "main":
-                # 主运出流 → 斜井入料队列 C（串联级联）
-                self.queues["C"] += outflow
-            else:
-                self.dispatched += outflow
+        # main 出流作为 incline 的 boundary_in（不叠加到 cells，作为传导输入）
+        inc_cells = cells[n_main:n_main+n_incline].copy()
+        inc_adv, inc_out = _advect_cells(inc_cells, self.belts["incline"].speed, 1.0, dt,
+                                         boundary_in=main_out)
 
-            # ── 4. 功率与磨损 ──
+        # incline 出流作为 panel101 的 boundary_in
+        p101_cells = cells[n_main+n_incline:].copy()
+        p101_adv, p101_out = _advect_cells(p101_cells, self.belts["panel101"].speed, 1.0, dt,
+                                           boundary_in=inc_out)
+
+        # 写回各皮带
+        self.belts["main"].cells = main_adv
+        self.belts["main"].last_outflow_tph = main_out * 3600.0 / dt
+        self.belts["main"].cumulative_outflow += main_out
+
+        self.belts["incline"].cells = inc_adv
+        self.belts["incline"].last_outflow_tph = inc_out * 3600.0 / dt
+        self.belts["incline"].cumulative_outflow += inc_out
+
+        self.belts["panel101"].cells = p101_adv
+        self.belts["panel101"].last_outflow_tph = p101_out * 3600.0 / dt
+        self.belts["panel101"].cumulative_outflow += p101_out
+        self.dispatched += p101_out
+
+        # ── 4. 功率、磨损、历史 ──
+        for belt_id in WebConfig.BELT_ORDER:
+            cfg = WebConfig.BELT_CONFIGS[belt_id]
+            state = self.belts[belt_id]
+            dx = cfg["cell_length"]
             fill_denom = cfg["max_density"] * dx
             state.last_fill_ratio = float(np.max(state.cells / max(fill_denom, 1e-6)))
 
             power_kw = _calculate_power_kw(cfg, state.speed, state.inventory_t, state.last_outflow_tph)
             state.last_power_kw = power_kw
 
+            accel = 0.0  # 简化：功率计算不需要精确加速度
             wear_inc = _calculate_wear(cfg, state.speed, state.last_outflow_tph, accel, dt)
             state.wear_index += wear_inc
 
             state.energy_kwh += power_kw * dt / 3600.0
             state._gear_dwell += dt
             total_power_kw += power_kw
-
-            # 调速事件
-            if state.speed != prev_speed:
-                last = state.speed_events[-1]
-                if last["t_end"] is None:
-                    last["t_end"] = self.time
-                state.speed_events.append({"t_start": self.time, "t_end": None, "speed": state.speed})
 
         self.total_steps += 1
         self.time += dt
@@ -292,7 +332,7 @@ class Simulator:
             main = self.belts["main"]
             self.t_hist.append(self.time)
             self.spd_hist.append(main.speed)
-            self.cumin_hist.append(sum(self.queues.get(q, 0.0) for q in ("A", "B")) + main.inventory_t + self.belts["incline"].inventory_t)
+            self.cumin_hist.append(sum(self.queues.get(q, 0.0) for q in WebConfig.INFLOW_QUEUES) + main.inventory_t + self.belts["incline"].inventory_t)
             self.cumout_hist.append(self.dispatched)
             total_coal = sum(b.inventory_t for b in self.belts.values()) + sum(self.queues.values())
             self.coal_hist.append(total_coal)
@@ -334,7 +374,7 @@ class Simulator:
     @property
     def total_in(self):
         """各入流点累计入煤量（近似：速率 t/s × 时间 s）。"""
-        return {q: self.rates.get(q, 0.0) * self.time for q in WebConfig.EXTERNAL_QUEUE_IDS}
+        return {q: self.rates.get(q, 0.0) * self.time for q in WebConfig.INFLOW_QUEUES}
 
     @property
     def total_out(self):

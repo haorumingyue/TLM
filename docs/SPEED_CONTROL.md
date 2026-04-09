@@ -17,7 +17,7 @@
                                                           最终排出
 ```
 
-每个转载点设有**队列缓冲区**：煤从上游皮带出流后进入下游队列，再按给料机能力装载到下游皮带。A/B 队列由外部日志数据驱动，C 队列由主运出流填充，T_B2_B3 由斜井出流填充。
+三条皮带**直接串联**：上游出流经对流传导到达皮带尾部后，直接注入下游皮带首格（受下游最大线密度限制），不存在中间缓冲队列。A/B 队列由外部日志数据驱动，作为主运皮带的入料缓冲。
 
 ### 1.2 设计哲学
 
@@ -66,7 +66,7 @@
 
 ### 3.2 斜井皮带 — PID（无前馈）
 
-入流来自主运出流（经 C 队列转载），使用独立 `PIDStrategy` 实例。因主运出流有传输延迟，A/B 预测值不直接用于斜井前馈，斜井 PID 仅用当前出流相关量。
+入流来自主运出流（直接注入斜井首格），使用独立 `PIDStrategy` 实例。因主运出流有传输延迟，A/B 预测值不直接用于斜井前馈，斜井 PID 仅用当前出流相关量。
 
 ### 3.3 101 皮带 — PID + 档位
 
@@ -223,7 +223,7 @@ E_{\mathrm{AI}} = \sum_{\mathrm{三条带}} \mathrm{energy\_kwh}
 
 **对照工况总能耗**
 
-第二台仿真器 `Simulator(fixed_speed=True)`：每步各带强制为配置中的 **`max_speed`（额定带速）**。两工作面 **A/B 的入流速率**由 `Replay.update(sim.time)` 在**同一仿真时刻**写入智能仿真与对照仿真（`replay.py` 中 `_set_lane_rate_both`），与日志时间轴一致；对照工况中 **C 固定为 0（不做外部注入）**，斜井与 101 的负载仅由对照工况内部级联出流自然形成（`runtime.py`）。其累计电量记为 \(E_{\mathrm{const}}\)（`sim_const.energy_acc` / API 字段 `total_energy_baseline_kwh`）。
+第二台仿真器 `Simulator(fixed_speed=True)`：每步各带强制为配置中的 **`max_speed`（额定带速）**。两工作面 **A/B 的入流速率**由 `Replay.update(sim.time)` 在**同一仿真时刻**写入智能仿真与对照仿真（`replay.py` 中 `_set_lane_rate_both`），与日志时间轴一致。其累计电量记为 \(E_{\mathrm{const}}\)（`sim_const.energy_acc` / API 字段 `total_energy_baseline_kwh`）。
 
 **综合节能率（%）**
 

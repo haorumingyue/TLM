@@ -27,9 +27,7 @@ def sim_thread():
             ctx.replay.update(ctx.sim.time)
             ctx.sim.auto = ctx.state.auto_speed
             ctx.sim.step()
-            # 对照工况只保留两工作面输入（A/B），C 不做外部注入。
-            # 斜井/101 负载仅由对照工况内部级联出流按额定常速自然演化。
-            ctx.sim_const.rates["C"] = 0.0
+            # 对照工况：A/B 已在 replay 中同步
             ctx.sim_const.auto = False
             ctx.sim_const.step()
             n += 1

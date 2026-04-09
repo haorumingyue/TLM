@@ -206,9 +206,9 @@ header h1{
     <div class="card-sub" id="cv-save-detail">节电 — kWh · 对照 — · 智能 —</div>
   </div>
   <div class="card">
-    <div class="card-label">额定常速合计功率</div>
-    <div class="card-value cv-blue" id="cv-power">—</div>
-    <div class="card-sub">三条皮带额定带速运行时瞬时功率之和 kW</div>
+    <div class="card-label">智能调速合计功率</div>
+    <div class="card-value cv-blue" id="cv-power-ai">—</div>
+    <div class="card-sub">额定常速合计功率 <span id="cv-power">—</span> kW</div>
   </div>
   <div class="card">
     <div class="card-label">仿真历时</div>
@@ -367,7 +367,7 @@ function mkBeltConst(id, color){
     hovertemplate:'里程 %{x} m<br>载荷(额定) %{y:.4f} t/格<extra></extra>'}],
   {...DARK, xaxis:{...DARK.xaxis,title:'沿程 (m)'},
    yaxis:{...DARK.yaxis,title:'线载荷 (t/格)'},
-   showlegend:true},PLT_CFG);
+   showlegend:false},PLT_CFG);
 }
 
 function mkLane(id){
@@ -488,7 +488,8 @@ function renderState(d){
         '节电 ' + fk(d.saving_kwh) + ' kWh · 对照累计 ' + fk(d.total_energy_baseline_kwh)
         + ' kWh · 智能累计 ' + fk(d.total_energy_kwh) + ' kWh';
     }
-    setCard('cv-power', d.total_power_const_kw, ' kW');
+    setCard('cv-power-ai', d.total_power_kw, ' kW');
+    setCard('cv-power', d.total_power_const_kw);
     setCard('cv-time', d.sim_time, ' s');
 
     // 三条皮带载荷图 + 指标
@@ -535,7 +536,7 @@ function renderState(d){
       }],{...DARK,
         xaxis:{...DARK.xaxis,title:'沿程 (m)'},
         yaxis:{...DARK.yaxis,title:'线载荷 (t/格)',range:[0,yMaxC]},
-        showlegend:true
+        showlegend:false
       },PLT_CFG);
     }
 
