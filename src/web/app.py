@@ -1,7 +1,9 @@
-"""Flask 应用：仪表盘页面与 /api/state、/api/control。"""
+"""Flask 应用：仪表盘页面、/api/state、/api/stream（SSE）与 /api/control。"""
+import json
 import os
+import time
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
 from . import runtime as rt
 from ..core.config import WebConfig
@@ -14,8 +16,7 @@ def create_app():
 
     @app.route("/")
     def index():
-        # 横坐标上限统一设为 1.25 t/s，即带速 4.5m/s 下 4500 t/h 的最大额定主煤流能力
-        lane_flow_ymax = 1.25
+        lane_flow_ymax = WebConfig.LANE_FLOW_YMAX
         return render_template("dashboard.html", lane_flow_ymax=lane_flow_ymax)
 
     @app.route("/api/state")
@@ -26,6 +27,24 @@ def create_app():
         if not d:
             return jsonify({"booting": True})
         return jsonify(d)
+
+    @app.route("/api/stream")
+    def api_stream():
+        """SSE 端点：每秒推送一次仿真状态快照。"""
+        def generate():
+            while True:
+                if rt.ctx is None or rt.ctx.state is None:
+                    yield "data: {\"booting\": true}\n\n"
+                else:
+                    d = rt.ctx.state.get()
+                    if d:
+                        yield f"data: {json.dumps(d, ensure_ascii=False)}\n\n"
+                    else:
+                        yield "data: {\"booting\": true}\n\n"
+                time.sleep(1.0)
+
+        return Response(generate(), mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.route("/api/control", methods=["POST"])
     def api_control():

@@ -18,7 +18,7 @@ def _ensure_deps():
         subprocess.check_call(
             [sys.executable, "-m", "pip", "install", "flask", "chronos-forecasting", "pandas", "torch"]
         )
-        os.execv(sys.executable, ["python"] + sys.argv)
+        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 _ensure_deps()
@@ -51,8 +51,10 @@ def main():
     runtime = WebRuntime()
     runtime.pred = Predictor()
     runtime.sim = Simulator()
-    runtime.sim_const = Simulator(fixed_speed=WebConfig.ACTUAL_SPEED)
-    runtime.replay = Replay([df0, df1], [ib0, ib1], runtime.sim, runtime.pred)
+    runtime.sim_const = Simulator(fixed_speed=True)
+    runtime.replay = Replay(
+        [df0, df1], [ib0, ib1], runtime.sim, runtime.pred, sim_const=runtime.sim_const
+    )
     runtime.state = SimState()
 
     rt.ctx = runtime
