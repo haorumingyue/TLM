@@ -223,7 +223,7 @@ E_{\mathrm{AI}} = \sum_{\mathrm{三条带}} \mathrm{energy\_kwh}
 
 **对照工况总能耗**
 
-第二台仿真器 `Simulator(fixed_speed=True)`：每步各带强制为配置中的 **`max_speed`（额定带速）**。两工作面 **A/B 的入流速率**由 `Replay.update(sim.time)` 在**同一仿真时刻**写入智能仿真与对照仿真（`replay.py` 中 `_set_lane_rate_both`），与日志时间轴一致；**C** 为配置中的外部入流字段（日志不直接驱动），每步仍与智能侧 `rates["C"]` 对齐（`runtime.py`）。其累计电量记为 \(E_{\mathrm{const}}\)（`sim_const.energy_acc` / API 字段 `total_energy_baseline_kwh`）。
+第二台仿真器 `Simulator(fixed_speed=True)`：每步各带强制为配置中的 **`max_speed`（额定带速）**。两工作面 **A/B 的入流速率**由 `Replay.update(sim.time)` 在**同一仿真时刻**写入智能仿真与对照仿真（`replay.py` 中 `_set_lane_rate_both`），与日志时间轴一致；对照工况中 **C 固定为 0（不做外部注入）**，斜井与 101 的负载仅由对照工况内部级联出流自然形成（`runtime.py`）。其累计电量记为 \(E_{\mathrm{const}}\)（`sim_const.energy_acc` / API 字段 `total_energy_baseline_kwh`）。
 
 **综合节能率（%）**
 
