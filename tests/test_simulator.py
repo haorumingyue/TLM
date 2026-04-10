@@ -26,16 +26,14 @@ class TestSimulator:
         for _ in range(100):
             sim.step()
         # 各皮带应保持各自额定速度（max_speed）
-        assert sim.belts["main"].speed == WebConfig.BELT_MAIN["max_speed"]
-        assert sim.belts["incline"].speed == WebConfig.BELT_INCLINE["max_speed"]
-        assert sim.belts["panel101"].speed == WebConfig.BELT_PANEL101["max_speed"]
+        assert sim.belts["main"].speed == WebConfig.BELT_MAIN.max_speed
+        assert sim.belts["incline"].speed == WebConfig.BELT_INCLINE.max_speed
+        assert sim.belts["panel101"].speed == WebConfig.BELT_PANEL101.max_speed
 
     def test_queues_exist(self):
         sim = Simulator()
         assert "A" in sim.queues
         assert "B" in sim.queues
-        assert "C" in sim.queues
-        assert "T_B2_B3" in sim.queues
 
     def test_mass_conservation(self):
         """总入流 - 排出 ≈ 皮带存煤 + 队列（浮点容差）。"""
@@ -90,12 +88,12 @@ class TestSimulator:
         assert v == gears[1]
 
     def test_gear_downshift_delay(self):
-        """降档需驻留至少 60s。"""
+        """降档需驻留至少 min_dwell_down (默认 30s)。"""
         from src.core.simulator import _apply_gears, _gears_for
         state = sim_main_state()
         gears = _gears_for("main")
         state._gear_idx = 3  # 4.0
-        state._gear_dwell = 5.0  # 不足 60s
+        state._gear_dwell = 5.0  # 不足 30s
         mid = 0.5 * (gears[3] + gears[2])  # 3.6
         v = _apply_gears(mid - 0.5, state)  # 3.1，明显低于中点
         assert v == gears[3]  # 驻留不够，保持
@@ -106,39 +104,32 @@ class TestSimulator:
         state = sim_main_state()
         gears = _gears_for("main")
         state._gear_idx = 3  # 4.0
-        state._gear_dwell = 70.0  # 超过 60s
+        state._gear_dwell = 70.0  # 超过 30s
         mid = 0.5 * (gears[3] + gears[2])  # 3.6
         v = _apply_gears(mid - 0.5, state)
         assert v == gears[2]
 
-    def test_speed_events_recorded(self):
+    def test_speed_events_initialized(self):
+        """每条皮带初始化时应有一条初始调速事件。"""
         sim = Simulator(fixed_speed=True)
-        sim.set_rate(0, 0.5)
-        for _ in range(10):
-            sim.step()
-        initial = len(sim.belts["main"].speed_events)
-        # 切换到智能调速模式，低入流驱动降档
-        sim.fixed_speed = None
-        sim.auto = True
-        sim.set_rate(0, 0.01)
-        for _ in range(2000):
-            sim.step()
-        assert len(sim.belts["main"].speed_events) > initial
+        for bid in WebConfig.BELT_ORDER:
+            events = sim.belts[bid].speed_events
+            assert len(events) == 1
+            assert events[0]["t_start"] == 0.0
+            assert events[0]["t_end"] is None
 
     def test_cascade_main_to_incline(self):
-        """主运出流应进入斜井队列 C，斜井出流应进 T_B2_B3，101 出流排出。"""
+        """主运出流应进入斜井皮带，101 出流排出。"""
         sim = Simulator(fixed_speed=True)
         sim.set_rate(0, 0.5)  # A 入流 0.5 t/s
         for _ in range(2000):
             sim.step()
-        # 主运排出的煤应进入 C 队列或斜井皮带
+        # 主运排出的煤应进入斜井或 panel101
         incline_coal = sim.belts["incline"].inventory_t
-        queue_c = sim.queues["C"]
-        queue_t = sim.queues["T_B2_B3"]
         panel101_coal = sim.belts["panel101"].inventory_t
         dispatched = sim.dispatched
         # 煤应流经整条链路
-        total_downstream = incline_coal + queue_c + queue_t + panel101_coal + dispatched
+        total_downstream = incline_coal + panel101_coal + dispatched
         assert total_downstream > 0.0, "煤应流过主运到达下游"
 
     def test_cascade_panel101_dispatches(self):

@@ -17,13 +17,31 @@ class PIDStrategy:
     # 0.6 表示皮带 60% 满载时速度恰好匹配入流，超过则加速，低于则减速
     L_OPT = 0.60
 
+    # ── 拥堵检测权重 ────────────────────────────────────
+    WEIGHT_HEAD = 0.2       # 出料端（首格）权重
+    WEIGHT_TAIL = 1.0       # 装料端（尾格）权重，拥堵风险最高
+
+    # ── 前馈参数 ─────────────────────────────────────────
+    PRED_DECAY_COEFF = 0.3  # 预测步衰减系数：越远的预测步权重越低
+    FALLBACK_DENSITY = 0.90 # 线密度未知时的回退因子（≈ 典型 max_density）
+
+    # ── 积分器参数 ────────────────────────────────────────
+    INTEGRAL_GAIN = 0.05    # 积分增益
+    INTEGRAL_LIMIT = 0.5    # 积分上下限
+    INTEGRAL_DECAY = 0.02   # 目标到达时的积分衰减率 (/s)
+    TARGET_DEADBAND = 0.02  # 目标到达判定门限（相对误差）
+
+    # ── 平滑与斜率限制 ───────────────────────────────────
+    APPROACH_DEADBAND = 0.005   # 平滑逼近死区 (m/s)
+    MAX_SLEW_RATE = 0.15        # 最大变速率 (m/s per step)
+
     def __init__(self):
         self._integ = 0.0
         self._fv = self.V_MAX
         self._last_v = self.V_MAX
-        self._ilim = 0.5
+        self._ilim = self.INTEGRAL_LIMIT
 
-    def calc(self, spd, inflow, max_load, dt, belt_load=None, pred_inflow=None, max_density=None):
+    def calc(self, spd, inflow, max_load, dt, belt_load=None, pred_inflow=None, max_density=None) -> float:
         """
         计算下一时刻的连续理想带速。
 
@@ -37,7 +55,7 @@ class PIDStrategy:
         """
         # ── 1. 局部拥堵检测：装料端（尾部）权重最高 ──
         if belt_load is not None and len(belt_load):
-            w = np.linspace(0.2, 1.0, len(belt_load))
+            w = np.linspace(self.WEIGHT_HEAD, self.WEIGHT_TAIL, len(belt_load))
             s_max = float(np.max(belt_load * w))
         else:
             s_max = max_load
@@ -45,7 +63,7 @@ class PIDStrategy:
         # ── 2. 前馈：按入流推算维持目标填料比所需带速 ──
         if pred_inflow is not None and len(pred_inflow):
             n = len(pred_inflow)
-            decay = np.array([1.0 / (1.0 + 0.3 * k) for k in range(n)])
+            decay = np.array([1.0 / (1.0 + self.PRED_DECAY_COEFF * k) for k in range(n)])
             ref_pred = float(np.max(pred_inflow * decay))
             ref = max(inflow, ref_pred)
         else:
@@ -55,7 +73,7 @@ class PIDStrategy:
         if max_density and max_density > 0:
             v_flow = ref / (max_density * self.L_OPT)
         else:
-            v_flow = ref / (self.L_OPT * 0.90)
+            v_flow = ref / (self.L_OPT * self.FALLBACK_DENSITY)
 
         # ── 3. 超填响应：当填料比超过 L_OPT 时平滑推高带速 ──
         if s_max > self.L_OPT and v_flow < self.V_MAX:
@@ -69,20 +87,24 @@ class PIDStrategy:
 
         # ── 4. 积分：衰减按 dt 归一化 ──
         dr = abs(ideal - self._last_v) / max(self._last_v, 1e-6)
-        if dr < 0.02:
-            # 目标已到达，按 2%/s 衰减（dt 归一化）
-            self._integ *= (1.0 - 0.02 * dt)
+        if dr < self.TARGET_DEADBAND:
+            # 目标已到达，按 INTEGRAL_DECAY/s 衰减（dt 归一化）
+            self._integ *= (1.0 - self.INTEGRAL_DECAY * dt)
         else:
-            self._integ = np.clip(self._integ + 0.05 * (ideal - self._last_v) * dt, -self._ilim, self._ilim)
+            self._integ = np.clip(
+                self._integ + self.INTEGRAL_GAIN * (ideal - self._last_v) * dt,
+                -self._ilim,
+                self._ilim,
+            )
 
         tgt = max(self.V_MIN, min(self.V_MAX, ideal + self._integ))
 
         alpha = dt / (2.0 + dt)
         self._fv = self._fv * (1 - alpha) + tgt * alpha
-        dv = 0.15 * dt
-        if self._fv > self._last_v + 0.005:
+        dv = self.MAX_SLEW_RATE * dt
+        if self._fv > self._last_v + self.APPROACH_DEADBAND:
             self._last_v = min(self._fv, self._last_v + dv)
-        elif self._fv < self._last_v - 0.005:
+        elif self._fv < self._last_v - self.APPROACH_DEADBAND:
             self._last_v = max(self._fv, self._last_v - dv)
         else:
             self._last_v = self._fv

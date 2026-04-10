@@ -1,4 +1,6 @@
 """仿真与前端之间的线程安全快照：节能率、历史曲线、预测与调速事件等。"""
+import csv
+import logging
 import os
 import threading
 
@@ -10,14 +12,27 @@ class SimState:
 
     def __init__(self):
         self._lk = threading.RLock()
-        self.paused = False
-        self.auto_speed = True
+        self._paused = False
+        self._auto_speed = True
         self.model_ready = False
         self.data = {}
         self._last_pred = [None, None]
         self._last_csv_write = 0.0
 
-    def snapshot(self, sim, sim_const, replay, pred):
+    def set_control(self, paused: bool = None, auto_speed: bool = None) -> None:
+        """线程安全地更新暂停/自动调速状态。"""
+        with self._lk:
+            if paused is not None:
+                self._paused = paused
+            if auto_speed is not None:
+                self._auto_speed = auto_speed
+
+    def get_control(self) -> tuple:
+        """线程安全地读取暂停/自动调速状态。"""
+        with self._lk:
+            return self._paused, self._auto_speed
+
+    def snapshot(self, sim, sim_const, replay, pred) -> None:
         ds = WebConfig.BELT_DOWNSAMPLE
         cfg = WebConfig
         # 基于真实物理积累的做功量计算百分比节能（对比额定常速对照组）
@@ -73,12 +88,11 @@ class SimState:
 
         # CSV 节流
         sim_t = sim.time
-        if sim_t - self._last_csv_write >= 10.0:
+        if sim_t - self._last_csv_write >= cfg.CSV_WRITE_INTERVAL:
             self._last_csv_write = sim_t
             try:
-                import csv
-                os.makedirs("logs", exist_ok=True)
-                with open("logs/speed_events.csv", "w", newline="", encoding="utf-8") as f:
+                os.makedirs(os.path.dirname(cfg.SPEED_EVENTS_CSV), exist_ok=True)
+                with open(cfg.SPEED_EVENTS_CSV, "w", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
                     writer.writerow(["t_start_s", "t_end_s", "duration_s", "speed_m_per_s"])
                     for ev in speed_events:
@@ -88,16 +102,16 @@ class SimState:
                             ev["duration"] if ev["duration"] is not None else "",
                             ev["speed"],
                         ])
-            except Exception:
-                pass
+            except OSError as e:
+                logging.warning("CSV 写入失败: %s", e)
 
         # 三条皮带各自的快照数据
         def belt_snapshot(belt_id, sim_obj):
             b = sim_obj.belts[belt_id]
             bcfg = cfg.BELT_CONFIGS[belt_id]
-            ds_b = max(1, int(bcfg["cell_length"] / cfg.BELT_MAIN["cell_length"])) if belt_id != "main" else ds
+            ds_b = max(1, int(bcfg.cell_length / cfg.BELT_MAIN.cell_length)) if belt_id != "main" else ds
             return {
-                "name": bcfg["name"],
+                "name": bcfg.name,
                 "speed": round(b.speed, 4),
                 "power_kw": round(b.last_power_kw, 2),
                 "inventory_t": round(b.inventory_t, 2),
@@ -115,8 +129,8 @@ class SimState:
         with self._lk:
             self.model_ready = pred.ready
             self.data = {
-                "paused": self.paused,
-                "auto_speed": self.auto_speed,
+                "paused": self._paused,
+                "auto_speed": self._auto_speed,
                 "model_ready": pred.ready,
                 "sim_time": round(sim.time, 1),
                 "saving_pct": round(saving, 2),
@@ -158,6 +172,6 @@ class SimState:
                 ),
             }
 
-    def get(self):
+    def get(self) -> dict:
         with self._lk:
             return dict(self.data)

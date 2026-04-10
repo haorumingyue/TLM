@@ -5,7 +5,8 @@
       "Bash(cmd.exe /c \"python -c \\\\\"print\\('hello'\\)\\\\\"\")",
       "Bash(ls /e/Python*/python.exe)",
       "Bash(ls /d/Python*/python.exe)",
-      "Read(//c/Users/Lenovo/AppData/Local/Programs/**)"
+      "Read(//c/Users/Lenovo/AppData/Local/Programs/**)",
+      "Bash(where python:*)"
     ]
   }
 }

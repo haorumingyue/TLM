@@ -1,4 +1,4 @@
-/__pycache__/
+__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -10,12 +10,25 @@ ENV/
 env.bak/
 venv.bak/
 
+# IDE
+.idea/
+.vscode/
+.DS_Store
+
+# pytest
+.pytest_cache/
+*.egg-info/
+
 # Project specific
 /data/*.txt
 /logs/
 /output/
+/models/
 *.log
 *.sqlite3
-.DS_Store
-.idea/
-.vscode/
+
+# Legacy one-time scripts (deprecated)
+/scripts/fix_quotes.py
+/scripts/patch_decimal.py
+/scripts/patch_speed_display.py
+/scripts/refactor_structure.py
