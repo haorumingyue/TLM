@@ -1,8 +1,12 @@
-chronos-forecasting
-pandas
-matplotlib
-numpy
-torch
-plotly
-colorama
-flask
+# TLM 默认运行栈（Chronos-2 预测 + Web 仿真）
+chronos-forecasting>=0.1
+pandas>=2.0
+numpy>=1.24
+torch>=2.0
+flask>=3.0
+
+# ---------------------------------------------------------------------------
+# 可选：TimesFM 后端（PREDICT_BACKEND = "timesfm"）
+# TimesFM 需从 Google 官方仓库源码安装，不能仅靠本文件一条 pip 装全。
+# 步骤与权重目录说明见：requirements-timesfm.txt、README.md、docs/SPEED_CONTROL.md §7
+# ---------------------------------------------------------------------------

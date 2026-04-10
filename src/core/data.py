@@ -6,11 +6,14 @@ import numpy as np
 import pandas as pd
 
 from .config import WebConfig
+from .logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 _LOG_PATTERN = re.compile(
     r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+:\s+流量:\s+"
-    r"([0-9\.]+None|None|[0-9\.]+)"
+    r"(?P<val>[0-9]+(?:\.[0-9]*)?|None)"
 )
 
 
@@ -22,7 +25,7 @@ def parse_file(filepath: str) -> pd.DataFrame:
             m = _LOG_PATTERN.search(line)
             if m:
                 timestamps.append(m.group(1))
-                v = m.group(2)
+                v = m.group("val")
                 try:
                     values.append(float(v))
                 except (ValueError, TypeError):
@@ -38,7 +41,7 @@ def load_file(data_dir: str, date_str: str) -> pd.DataFrame:
     fp = os.path.join(data_dir, f"{date_str}.txt")
     if not os.path.exists(fp):
         raise FileNotFoundError(f"日志文件不存在: {fp}")
-    print(f"  ✅ 加载文件: {os.path.basename(fp)}")
+    log.info("  ✅ 加载文件: %s", os.path.basename(fp))
     return parse_file(fp)
 
 

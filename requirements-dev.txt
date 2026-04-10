@@ -1,0 +1,9 @@
+# TLM 开发/评估额外依赖
+-r requirements.txt
+
+# 评估脚本（scripts/predict_traffic.py）
+plotly>=5.15
+matplotlib>=3.7
+
+# 测试
+pytest>=7.0

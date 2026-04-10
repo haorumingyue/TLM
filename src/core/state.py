@@ -1,21 +1,38 @@
 """仿真与前端之间的线程安全快照：节能率、历史曲线、预测与调速事件等。"""
+import csv
+import logging
+import os
 import threading
 
 from .config import WebConfig
 
 
 class SimState:
-    """持有暂停/自动调速等 UI 状态，并将双工况仿真结果序列化为 API 负载。"""
+    """持有暂停/自动调速等 UI 状态，并将多皮带仿真结果序列化为 API 负载。"""
 
     def __init__(self):
         self._lk = threading.RLock()
-        self.paused = False
-        self.auto_speed = True
+        self._paused = False
+        self._auto_speed = True
         self.model_ready = False
         self.data = {}
         self._last_pred = [None, None]
+        self._last_csv_write = 0.0
 
-    def snapshot(self, sim, sim_const, replay, pred):
+    def set_control(self, paused: bool = None, auto_speed: bool = None) -> None:
+        """线程安全地更新暂停/自动调速状态。"""
+        with self._lk:
+            if paused is not None:
+                self._paused = paused
+            if auto_speed is not None:
+                self._auto_speed = auto_speed
+
+    def get_control(self) -> tuple:
+        """线程安全地读取暂停/自动调速状态。"""
+        with self._lk:
+            return self._paused, self._auto_speed
+
+    def snapshot(self, sim, sim_const, replay, pred) -> None:
         ds = WebConfig.BELT_DOWNSAMPLE
         cfg = WebConfig
         # 基于真实物理积累的做功量计算百分比节能（对比额定常速对照组）
@@ -23,15 +40,17 @@ class SimState:
             saving = max(0.0, (sim_const.energy_acc - sim.energy_acc) / sim_const.energy_acc * 100)
         else:
             saving = 0.0
+        saving_kwh = max(0.0, sim_const.energy_acc - sim.energy_acc)
         N = cfg.N_HISTORY
         lanes_out = []
-        for i, pos in enumerate(cfg.INFLOW_POSITIONS):
+        for i, queue_id in enumerate(cfg.INFLOW_QUEUES):
             c = replay.cache[i]
             if c is not None:
                 self._last_pred[i] = c
             use = self._last_pred[i]
+            # 主运皮带上对应入流点的流量历史
             hist_t_raw = sim.t_hist[-N:]
-            hist_flow_raw = sim.flow_hist[pos][-N:]
+            hist_flow_raw = sim.flow_hist.get(queue_id, [])[-N:] if sim.flow_hist.get(queue_id) else [0.0] * len(hist_t_raw)
             hist_pred = []
             for tt in hist_t_raw:
                 log_idx = int(tt / WebConfig.LOG_INTERVAL_SEC)
@@ -47,11 +66,12 @@ class SimState:
                     "pred_low": [round(v, 4) for v in (use[1].tolist() if use else [])],
                     "pred_med": [round(v, 4) for v in (use[2].tolist() if use else [])],
                     "pred_high": [round(v, 4) for v in (use[3].tolist() if use else [])],
-                    "now_actual": round(sim.rates[i], 4),
+                    "now_actual": round(sim.rates.get(queue_id, 0.0), 4),
                     "now_pred": round(float(use[2][0]), 4) if use else None,
                 }
             )
-        # 基于当前仿真时间轴整理调速事件（所有时间均为“仿真时间”）
+
+        # 调速事件（主运皮带）
         speed_events = [
             {
                 "t_start": round(e["t_start"], 1),
@@ -63,62 +83,88 @@ class SimState:
                     else None
                 ),
             }
-            for e in getattr(sim, "speed_events", [])
+            for e in sim.belts["main"].speed_events
         ]
 
-        # 将调速事件快照输出到本地 CSV 文档，便于离线分析
-        # 文件包含：仿真起止时间、持续时长（秒）、对应带速
-        try:
-            import csv
-
-            with open("logs/speed_events.csv", "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow(["t_start_s", "t_end_s", "duration_s", "speed_m_per_s"])
-                for ev in speed_events:
-                    writer.writerow(
-                        [
+        # CSV 节流
+        sim_t = sim.time
+        if sim_t - self._last_csv_write >= cfg.CSV_WRITE_INTERVAL:
+            self._last_csv_write = sim_t
+            try:
+                os.makedirs(os.path.dirname(cfg.SPEED_EVENTS_CSV), exist_ok=True)
+                with open(cfg.SPEED_EVENTS_CSV, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["t_start_s", "t_end_s", "duration_s", "speed_m_per_s"])
+                    for ev in speed_events:
+                        writer.writerow([
                             ev["t_start"],
                             ev["t_end"] if ev["t_end"] is not None else "",
                             ev["duration"] if ev["duration"] is not None else "",
                             ev["speed"],
-                        ]
-                    )
-        except Exception:
-            # 本地写文件失败时不影响前端显示
-            pass
+                        ])
+            except OSError as e:
+                logging.warning("CSV 写入失败: %s", e)
+
+        # 三条皮带各自的快照数据
+        def belt_snapshot(belt_id, sim_obj):
+            b = sim_obj.belts[belt_id]
+            bcfg = cfg.BELT_CONFIGS[belt_id]
+            ds_b = max(1, int(bcfg.cell_length / cfg.BELT_MAIN.cell_length)) if belt_id != "main" else ds
+            return {
+                "name": bcfg.name,
+                "speed": round(b.speed, 4),
+                "power_kw": round(b.last_power_kw, 2),
+                "inventory_t": round(b.inventory_t, 2),
+                "fill_ratio": round(b.last_fill_ratio, 4),
+                "wear_index": round(b.wear_index, 4),
+                "energy_kwh": round(b.energy_kwh, 4),
+                "outflow_tph": round(b.last_outflow_tph, 2),
+                "pos": [round(v, 0) for v in b.get_pos()[::ds_b].tolist()],
+                "load": [round(float(v), 4) for v in b.cells[::ds_b].tolist()],
+            }
+
+        total_power_ai = sum(sim.belts[bid].last_power_kw for bid in cfg.BELT_ORDER)
+        total_power_const = sum(sim_const.belts[bid].last_power_kw for bid in cfg.BELT_ORDER)
 
         with self._lk:
             self.model_ready = pred.ready
             self.data = {
-                "paused": self.paused,
-                "auto_speed": self.auto_speed,
+                "paused": self._paused,
+                "auto_speed": self._auto_speed,
                 "model_ready": pred.ready,
                 "sim_time": round(sim.time, 1),
-                "belt_pos": [round(v, 0) for v in sim.get_pos()[::ds].tolist()],
-                "belt_load": [round(v, 4) for v in sim.bl[::ds].tolist()],
-                "belt_const_load": [round(v, 4) for v in sim_const.bl[::ds].tolist()],
-                "avg_power": round(sim.energy_acc / max(sim.time_acc, 1e-6), 4),
-                "rec_speed": round(sim.speed, 4),
-                "actual_speed": cfg.ACTUAL_SPEED,
                 "saving_pct": round(saving, 2),
+                "saving_kwh": round(saving_kwh, 4),
+                "total_power_kw": round(total_power_ai, 2),
+                "total_power_const_kw": round(total_power_const, 2),
+                "total_energy_kwh": round(sim.energy_acc, 4),
+                "total_energy_baseline_kwh": round(sim_const.energy_acc, 4),
+                "total_wear": round(sum(b.wear_index for b in sim.belts.values()), 4),
+                "dispatched_t": round(sim.dispatched, 2),
+                "queues": {q: round(v, 2) for q, v in sim.queues.items()},
                 "scenario_const": {
-                    "speed": round(sim_const.speed, 4),
+                    "speed": round(sim_const.belts["main"].speed, 4),
+                    "power_kw": round(total_power_const, 2),
                     "on_belt": round(sim_const.stats["coal"], 4),
-                    "total_in": round(sum(sim_const.total_in.values()), 4),
                     "total_out": round(sim_const.total_out, 4),
                 },
                 "scenario_ai": {
-                    "speed": round(sim.speed, 4),
+                    "speed": round(sim.belts["main"].speed, 4),
+                    "power_kw": round(total_power_ai, 2),
                     "on_belt": round(sim.stats["coal"], 4),
-                    "total_in": round(sum(sim.total_in.values()), 4),
                     "total_out": round(sim.total_out, 4),
                 },
+                "belts": {bid: belt_snapshot(bid, sim) for bid in cfg.BELT_ORDER},
+                "belts_const": {bid: belt_snapshot(bid, sim_const) for bid in cfg.BELT_ORDER},
                 "lanes": lanes_out,
                 "spd_t": [round(v, 1) for v in sim.t_hist[-N:]],
                 "spd_v": [round(v, 4) for v in sim.spd_hist[-N:]],
                 "cumin": [round(v, 4) for v in sim.cumin_hist[-N:]],
                 "cumout": [round(v, 4) for v in sim.cumout_hist[-N:]],
                 "coal": [round(v, 4) for v in sim.coal_hist[-N:]],
+                "energy_ai": [round(v, 4) for v in sim.energy_hist[-N:]],
+                "energy_const": [round(v, 4) for v in sim_const.energy_hist[-N:]],
+                "power_kw_hist": [round(v, 2) for v in sim.power_hist[-N:]],
                 "pred_queue": list(replay.q_size),
                 "speed_events": speed_events,
                 "lane_flow_ymax": round(
@@ -126,6 +172,6 @@ class SimState:
                 ),
             }
 
-    def get(self):
+    def get(self) -> dict:
         with self._lk:
             return dict(self.data)

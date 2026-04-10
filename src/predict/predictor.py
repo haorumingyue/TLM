@@ -5,6 +5,9 @@ import numpy as np
 import torch
 
 from ..core.config import WebConfig
+from ..core.logging_config import get_logger
+
+log = get_logger(__name__)
 
 
 class Predictor:
@@ -25,14 +28,14 @@ class Predictor:
             if backend == "timesfm":
                 try:
                     self._load_timesfm()
-                    print("  ✅ TimesFM 模型加载完成")
+                    log.info("✅ TimesFM 模型加载完成")
                 except Exception as e:
-                    print(f"  ⚠️ TimesFM 加载失败，回退到 Chronos-2：{e}")
+                    log.warning("⚠️ TimesFM 加载失败，回退到 Chronos-2：%s", e)
                     self._load_chronos()
-                    print("  ✅ Chronos-2 模型加载完成")
+                    log.info("✅ Chronos-2 模型加载完成")
             else:
                 self._load_chronos()
-                print("  ✅ Chronos-2 模型加载完成")
+                log.info("✅ Chronos-2 模型加载完成")
 
     def _load_chronos(self):
         from chronos import Chronos2Pipeline
