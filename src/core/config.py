@@ -130,19 +130,20 @@ class WebConfig:
     # ── 预测模型 ────────────────────────────────────────────────────
 
     DATA_DIR = "data"
-    LANE0_DATE = "20250512"
-    LANE1_DATE = "20250514"
+    LANE0_DATE = "wangpo_3306_20250917"
+    LANE1_DATE = "wangpo_3217_20250917"
     MODEL_DIR = os.path.join(_PROJECT_ROOT, "models", "chronos-2")
-    CONTEXT_LENGTH = 60
-    PREDICTION_LENGTH = 10
+    CONTEXT_LENGTH = 360
+    PREDICTION_LENGTH = 20
     GAP_THRESHOLD_SEC = 30
     QUANTILE_LEVELS = [0.1, 0.5, 0.9]
     PREDICT_BACKEND = "timesfm"
+    # PREDICT_BACKEND = "chronos"
     TIMESFM_MODEL_NAME = os.path.join(_PROJECT_ROOT, "models", "timesfm-2.5-200m-pytorch")
 
     # ── 日志原始流量上界 (t/采样间隔)，用于两路工作面流量图统一纵轴 ──
 
-    MAX_RAW_TRAFFIC = 1.66
+    MAX_RAW_TRAFFIC = 2.0
     LANE_FLOW_Y_HEADROOM = 1.25
     LANE_FLOW_YMAX = 1.25
 

@@ -64,6 +64,7 @@ function mkEnergy(){
      yaxis:{...DARK.yaxis,title:'累计能耗 (kWh)'}},PLT_CFG);
 }
 
+// ── 初始化所有图表 ──
 mkBelt('ch-belt-main', 'main');
 mkBelt('ch-belt-incline', 'incline');
 mkBelt('ch-belt-panel101', 'panel101');

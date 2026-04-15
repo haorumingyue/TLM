@@ -15,11 +15,14 @@ _LOG_PATTERN = re.compile(
     r"(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\.\d+:\s+流量:\s+"
     r"(?P<val>[0-9]+(?:\.[0-9]*)?|None)"
 )
+_VEL_PATTERN = re.compile(
+    r"速度:\s+(?P<vel>[0-9]+(?:\.[0-9]*)?|None)"
+)
 
 
 def parse_file(filepath: str) -> pd.DataFrame:
-    """按行解析「时间戳 + 流量」文本，缺失值线性插值后返回 DataFrame。"""
-    timestamps, values = [], []
+    """按行解析「时间戳 + 流量 + 速度」文本，缺失值线性插值后返回 DataFrame。"""
+    timestamps, values, velocities = [], [], []
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             m = _LOG_PATTERN.search(line)
@@ -30,9 +33,20 @@ def parse_file(filepath: str) -> pd.DataFrame:
                     values.append(float(v))
                 except (ValueError, TypeError):
                     values.append(np.nan)
-    df = pd.DataFrame({"timestamp": timestamps, "traffic": values})
+
+                vm = _VEL_PATTERN.search(line)
+                if vm:
+                    vv = vm.group("vel")
+                    try:
+                        velocities.append(float(vv))
+                    except (ValueError, TypeError):
+                        velocities.append(np.nan)
+                else:
+                    velocities.append(np.nan)
+    df = pd.DataFrame({"timestamp": timestamps, "traffic": values, "velocity": velocities})
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df["traffic"] = df["traffic"].interpolate(method="linear").bfill().ffill()
+    df["velocity"] = df["velocity"].interpolate(method="linear").bfill().ffill()
     return df
 
 

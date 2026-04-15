@@ -21,6 +21,7 @@ class Replay:
         self.sim_const = sim_const
         self.idx = [0, 0]
         self.buf = [[], []]
+        self.vel_buf = [[], []]
         self.cache = [None, None]
         self.pred_buf = [{}, {}]
         self._q = [_queue.Queue(), _queue.Queue()]
@@ -31,12 +32,16 @@ class Replay:
     def _worker(self, lane):
         q = self._q[lane]
         while True:
-            ctx, ptr = q.get()
+            ctx, ptr, vel_series = q.get()
             try:
                 self.q_size[lane] = q.qsize()
                 while not self.pred.ready:
                     time.sleep(0.2)
-                r = self.pred.predict(ctx)
+                # 构建协变量：速度序列（context + horizon 长度）
+                covariates = None
+                if self.pred.supports_covariates and vel_series is not None:
+                    covariates = {"velocity": vel_series}
+                r = self.pred.predict(ctx, covariates=covariates)
                 if r:
                     lo, md, hi = r
                     ft = np.arange(ptr + 1, ptr + 1 + WebConfig.PREDICTION_LENGTH) * WebConfig.LOG_INTERVAL_SEC
@@ -58,6 +63,19 @@ class Replay:
         if self.sim_const is not None:
             self.sim_const.set_rate(lane, rate_t_per_s)
 
+    def _build_vel_covariate(self, lane):
+        """构建速度协变量序列：context + horizon 长度，用最新速度填充未来步。"""
+        buf = self.vel_buf[lane]
+        if not buf:
+            return None
+        need = WebConfig.CONTEXT_LENGTH + WebConfig.PREDICTION_LENGTH
+        # 取最近 context_length 个历史速度
+        recent = buf[-WebConfig.CONTEXT_LENGTH:]
+        # 未来 horizon 步用最新速度填充（假设未来短时间内速度不变）
+        last = buf[-1]
+        future = [last] * WebConfig.PREDICTION_LENGTH
+        return np.array(recent + future, dtype=np.float32)
+
     def update(self, t):
         ei = int(t / WebConfig.LOG_INTERVAL_SEC)
         for lane in range(2):
@@ -68,16 +86,21 @@ class Replay:
                 if i > 0 and ib[i]:
                     self._set_lane_rate_both(lane, 0.0)
                     self.buf[lane] = []
+                    self.vel_buf[lane] = []
                     self.cache[lane] = None
                     self.sim.pred_flows[lane] = None
                 else:
                     raw = float(df["traffic"].iloc[i])
+                    vel = float(df["velocity"].iloc[i])
                     self._set_lane_rate_both(lane, raw2ts(raw))
                     self.buf[lane].append(raw)
+                    self.vel_buf[lane].append(vel)
                     if len(self.buf[lane]) > WebConfig.CONTEXT_LENGTH:
                         self.buf[lane] = self.buf[lane][-WebConfig.CONTEXT_LENGTH :]
+                        self.vel_buf[lane] = self.vel_buf[lane][-WebConfig.CONTEXT_LENGTH :]
                     if len(self.buf[lane]) >= WebConfig.CONTEXT_LENGTH:
-                        self._q[lane].put((np.array(self.buf[lane]), self.idx[lane]))
+                        vel_cov = self._build_vel_covariate(lane)
+                        self._q[lane].put((np.array(self.buf[lane]), self.idx[lane], vel_cov))
                 self.idx[lane] += 1
             if self.cache[lane]:
                 self.sim.pred_flows[lane] = self.cache[lane][2]
