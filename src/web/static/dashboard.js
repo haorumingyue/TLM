@@ -31,9 +31,9 @@ function mkBelt(id, color){
   Plotly.newPlot(id,[{name:'智能调速', x:[],y:[],mode:'lines',
     line:{color:c.line,width:1.5},
     fill:'tozeroy',fillcolor:c.fill,
-    hovertemplate:'里程 %{x} m<br>载荷 %{y:.4f} t/格<extra></extra>'}],
+    hovertemplate:'里程 %{x} m<br>载荷 %{y:.4f} t/m<extra></extra>'}],
   {...DARK, xaxis:{...DARK.xaxis,title:'沿程 (m)'},
-   yaxis:{...DARK.yaxis,title:'线载荷 (t/格)'}},PLT_CFG);
+   yaxis:{...DARK.yaxis,title:'线载荷 (t/m)'}},PLT_CFG);
 }
 
 function mkLane(id){
@@ -46,21 +46,21 @@ function mkLane(id){
      mode:'lines',line:{color:'rgba(0,0,0,0)',width:0}},
     {name:'超前预测', x:[],y:[],mode:'lines',
      line:{color:'#60a5fa',width:2,dash:'dash'}},
-  ],{...DARK, xaxis:{...DARK.xaxis,title:'仿真时间 (s)'},
+  ],{...DARK, xaxis:{...DARK.xaxis,title:'时间 (s)'},
      yaxis:{...DARK.yaxis,title:'瞬时流量 (t/s)',range:[0,window.LANE_FLOW_YMAX]}},PLT_CFG);
 }
 
 function mkSpeed(){
   Plotly.newPlot('ch-speed',[
     {name:'智能调速',x:[],y:[],mode:'lines',line:{color:'#c4b5fd',width:2}},
-  ],{...DARK, xaxis:{...DARK.xaxis,title:'仿真时间 (s)'},
+  ],{...DARK, xaxis:{...DARK.xaxis,title:'时间 (s)'},
      yaxis:{...DARK.yaxis,title:'带速 (m/s)',range:[0.5,5.2]}},PLT_CFG);
 }
 
 function mkEnergy(){
   Plotly.newPlot('ch-energy',[
     {name:'AI 智能调速',x:[],y:[],mode:'lines',line:{color:'#c4b5fd',width:2}},
-  ],{...DARK, xaxis:{...DARK.xaxis,title:'仿真时间 (s)'},
+  ],{...DARK, xaxis:{...DARK.xaxis,title:'时间 (s)'},
      yaxis:{...DARK.yaxis,title:'累计能耗 (kWh)'}},PLT_CFG);
 }
 
@@ -156,10 +156,10 @@ function renderState(d){
         name:'智能调速', x:b.pos, y:b.load, mode:'lines',
         line:{color:bc.line,width:1.5},
         fill:'tozeroy',fillcolor:bc.fill,
-        hovertemplate:'里程 %{x} m<br>载荷 %{y:.4f} t/格<extra></extra>'
+        hovertemplate:'里程 %{x} m<br>载荷 %{y:.4f} t/m<extra></extra>'
       }],{...DARK,
         xaxis:{...DARK.xaxis,title:'沿程 (m)'},
-        yaxis:{...DARK.yaxis,title:'线载荷 (t/格)',range:[0,BELT_YMAX]},
+        yaxis:{...DARK.yaxis,title:'线载荷 (t/m)',range:[0,BELT_YMAX]},
         showlegend:false
       },PLT_CFG);
     }
@@ -189,7 +189,7 @@ function renderState(d){
          line:{color:'rgba(0,0,0,0)',width:0}},
         {name:'超前预测', x:pred.t, y:pred.med,
          mode:'lines',line:{color:col,width:2,dash:'dash'}},
-      ],{...DARK, xaxis:{...DARK.xaxis,title:'仿真时间 (s)'},
+      ],{...DARK, xaxis:{...DARK.xaxis,title:'时间 (s)'},
          yaxis:{...DARK.yaxis,title:'瞬时流量 (t/s)',range:[0,laneYMax]},
          annotations: (()=>{
            const ann = [];
@@ -207,7 +207,7 @@ function renderState(d){
              ann.push({
                x:1,y:1,xref:'paper',yref:'paper',xanchor:'right',yanchor:'top',
                text: `实测 ${lane.now_actual} t/s<br>预测 ${lane.now_pred} t/s`
-                     + (mae!==null ? `<br>MAE ${mae} t/s` : ''),
+                     + (mae!==null ? `<br>平均误差 ${mae} t/s` : ''),
                showarrow:false, bgcolor:'rgba(21,27,36,0.94)',
                bordercolor:col, borderwidth:1, font:{size:10,color:'#f0f3f6'}
              });
@@ -220,14 +220,14 @@ function renderState(d){
     Plotly.react('ch-speed',[
       {name:'智能调速', x:d.spd_t, y:d.spd_v,
        mode:'lines',line:{color:'#c4b5fd',width:2}},
-    ],{...DARK, xaxis:{...DARK.xaxis,title:'仿真时间 (s)'},
+    ],{...DARK, xaxis:{...DARK.xaxis,title:'时间 (s)'},
        yaxis:{...DARK.yaxis,title:'带速 (m/s)',range:[0.5,5.2]}},PLT_CFG);
 
     // 能耗累积图
     Plotly.react('ch-energy',[
       {name:'AI 智能调速', x:d.spd_t, y:d.energy_ai||[],
        mode:'lines',line:{color:'#c4b5fd',width:2}},
-    ],{...DARK, xaxis:{...DARK.xaxis,title:'仿真时间 (s)'},
+    ],{...DARK, xaxis:{...DARK.xaxis,title:'时间 (s)'},
        yaxis:{...DARK.yaxis,title:'累计能耗 (kWh)'}},PLT_CFG);
 
   }catch(e){console.warn('render error',e);}

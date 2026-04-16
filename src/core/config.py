@@ -183,3 +183,4 @@ class WebConfig:
             raise ValueError("DT 必须为正数")
         if cls.LOG_INTERVAL_SEC <= 0:
             raise ValueError("LOG_INTERVAL_SEC 必须为正数")
+
