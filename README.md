@@ -12,10 +12,10 @@ TLM 是一个专为煤矿胶带输送线设计的**集约化节能调速系统**
 
 ## 核心特性
 
-- **双引擎流量预测**: 支持 **Amazon Chronos-2**（默认）与 **Google TimesFM 2.5**（可选）两种时序预测后端。
+- **双引擎流量预测**: 支持 **Google TimesFM 2.5**（默认）与 **Amazon Chronos-2**（可选）两种时序预测后端，支持速度协变量增强预测。
 - **离散 PID 调速**: 前馈 + 反馈复合控制，内置中点滞回与驻留约束，防止频繁换挡。
 - **双工况仿真**: 同一入流下并行运行智能调速与额定带速两条仿真，实时对比累计能耗。
-- **实时看板**: Flask Web 后端，实时展示流量分布、带速档位、瞬时负载及节能指标。
+- **实时看板**: Flask Web 后端，实时展示三级皮带载荷分布、工作面落煤流量与预测、带速曲线及节能指标。
 
 ---
 
@@ -24,9 +24,9 @@ TLM 是一个专为煤矿胶带输送线设计的**集约化节能调速系统**
 | 路径 | 说明 |
 | :--- | :--- |
 | `run_web.py` | **主启动程序** — 同时开启仿真、预测与 Web 服务 |
-| `src/core/` | **核心模块** — 配置 (`config`)、PID 算法 (`pid`)、仿真逻辑 (`simulator`) |
-| `src/predict/` | **预测中心** — 抽象推理接口，支持多后端切换 |
-| `src/web/` | **交互层** — API 后端、CLI 工具、前端模板 |
+| `src/core/` | **核心模块** — 配置 (`config`)、PID 算法 (`pid`)、仿真逻辑 (`simulator`)、状态快照 (`state`)、数据解析 (`data`) |
+| `src/predict/` | **预测中心** — TimesFM / Chronos 双后端推理接口 |
+| `src/web/` | **交互层** — Flask API、CLI 启动器、实时回放 (`replay`)、前端模板与静态资源 |
 | `data/` | 原始流量日志 (`.txt`)，由物理设备采集 |
 | `models/` | 预训练模型权重（本地加载） |
 | `docs/` | 详细设计文档，含 [速度控制策略](docs/SPEED_CONTROL.md) |
@@ -60,7 +60,8 @@ pip install -r requirements.txt
 ### 数据与模型
 
 - **流量日志**: 放置于 `data/` 目录，格式为 `<date>.txt`。
-- **Chronos-2 模型**: 默认从 `models/chronos-2/` 加载；若不存在将自动从 HuggingFace 拉取。
+- **TimesFM 2.5 模型**（默认）: 从 `models/timesfm-2.5-200m-pytorch/` 加载；支持速度协变量预测。
+- **Chronos-2 模型**（可选）: 从 `models/chronos-2/` 加载；若不存在将自动从 HuggingFace 拉取。
 
 ### 启动
 
@@ -78,11 +79,14 @@ python run_web.py
 
 | 参数 | 默认值 | 说明 |
 | :--- | :--- | :--- |
-| `PREDICT_BACKEND` | `"chronos"` | 预测引擎：`chronos` 或 `timesfm` |
-| `SPEED_GEARS_MAIN` 等 | `1.5 … 4.5` (5 档) | 各皮带离散速度档位 (m/s) |
-| `L_OPT` | `0.60` | 目标填料比（0~1） |
+| `PREDICT_BACKEND` | `"timesfm"` | 预测引擎：`timesfm` 或 `chronos` |
+| `SPEED_GEARS` | `[1.5, 2.25, 3.0, 3.75, 4.5]` | 各皮带统一 5 档速度 (m/s) |
 | `DT` | `1.0` | 仿真步长 (s) |
+| `CONTEXT_LENGTH` | `360` | 预测上下文长度（采样点数） |
+| `PREDICTION_LENGTH` | `20` | 预测步数 |
 | `PORT` | `5173` | Web 服务端口 |
+
+> `L_OPT`（目标填料比，0.60）定义在 `src/core/pid.py` 的 `PIDStrategy` 中，非 WebConfig 配置项。
 
 更多参数与物理含义见 [速度控制策略文档](docs/SPEED_CONTROL.md)。
 
