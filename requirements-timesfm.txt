@@ -1,0 +1,32 @@
+# =============================================================================
+# TLM — TimesFM 2.5 可选预测后端（与 requirements.txt 配合使用）
+# =============================================================================
+# TimesFM 未作为单一 PyPI 包固定在本仓库的 requirements.txt 中；需按官方方式
+# 从源码安装，且需自行准备本地模型目录（见下方 TIMESFM_MODEL_NAME）。
+#
+# 环境：建议 Python 3.10～3.12（与 chronos / torch 一致；3.13+ 可能不被 TimesFM 支持）
+#
+# --- 步骤 1：安装 TLM 基础依赖（含 PyTorch）---
+#   pip install -r requirements.txt
+#
+# --- 步骤 2：克隆并安装 TimesFM（在同一虚拟环境中）---
+#   git clone https://github.com/google-research/timesfm.git
+#   cd timesfm
+#   pip install -e ".[torch]"
+#   # 若官方 extras 名称有变，以 timesfm 仓库 README / pyproject 为准
+#
+# --- 步骤 3：准备权重 ---
+# 在 src/core/config.py 中 TIMESFM_MODEL_NAME 默认指向例如：
+#   <项目根>/models/timesfm-2.5-200m-pytorch
+# 请从 TimesFM 官方说明或 Hugging Face 模型卡下载对应权重到该目录，
+# 使 from_pretrained / 本地加载可找到文件。
+#
+# --- 步骤 4：切换后端 ---
+#   PREDICT_BACKEND = "timesfm"
+#
+# 加载失败时，Predictor 会回退 Chronos-2（需已安装 chronos-forecasting）。
+# =============================================================================
+
+# 本文件无额外 pip 行：TimesFM 依赖由其源码 setup/pyproject 解析。
+# 若需与 Hugging Face 交互下载权重，一般已随 timesfm 或 torch 生态安装；
+# 缺失时可手动： pip install "huggingface_hub>=0.20"

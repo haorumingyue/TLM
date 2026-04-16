@@ -17,17 +17,19 @@ def sim_thread():
         if ctx is None:
             time.sleep(0.1)
             continue
-        if ctx.state.paused:
+        paused, auto_speed = ctx.state.get_control()
+        if paused:
             time.sleep(0.05)
             continue
 
         # 一个日志采样周期：先推进 log_iv 对应的若干 DT 步，再等待本周期内两路预测队列清空
         for _ in range(steps_per_log_tick):
+            # 工作面 A/B 入流由 Replay.update(t) 按仿真时间同时写入 sim 与 sim_const
             ctx.replay.update(ctx.sim.time)
-            ctx.sim.auto = ctx.state.auto_speed
+            ctx.sim.auto = auto_speed
             ctx.sim.step()
-            for i in range(2):
-                ctx.sim_const.set_rate(i, ctx.sim.rates[i])
+            # 对照工况：A/B 已在 replay 中同步
+            ctx.sim_const.auto = False
             ctx.sim_const.step()
             n += 1
             if n % WebConfig.N_STATE_STEPS == 0:
